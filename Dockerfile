@@ -25,12 +25,23 @@ FROM debian:bookworm-slim AS runner
 # Set environment variables to avoid interaction during installation
 ENV DEBIAN_FRONTEND=noninteractive
 
+RUN echo 'deb http://deb.debian.org/debian/ bookworm main' > /etc/apt/sources.list.d/debian.list
+
+# Bookworm backports for latest available LibreOffice version
+RUN echo 'deb http://deb.debian.org/debian bookworm-backports main' > /etc/apt/sources.list.d/bookworm-backports.list
+
+
 WORKDIR /app
 
 # Install dependencies
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libreoffice && \
-    apt-get clean && \
+    apt-get install -y --no-install-recommends curl ca-certificates
+    
+# Install stable libreoffice from backports
+RUN apt-get install -t bookworm-backports -y libreoffice
+
+# Cleanup
+RUN apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy the built binary
