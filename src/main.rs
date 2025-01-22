@@ -213,18 +213,6 @@ fn office_runner(
     let temp_in = tmp_dir.join(format!("lo_native_input_{random_id}"));
     let temp_out = tmp_dir.join(format!("lo_native_output_{random_id}.pdf"));
 
-    // Convert paths to strings
-    let temp_in_path = temp_in.to_str().context("failed to create temp in path")?;
-    let temp_out_path = temp_out
-        .to_str()
-        .context("failed to create temp out path")?;
-
-    // Create office type safe paths
-    let input_url =
-        DocUrl::from_absolute_path(temp_in_path).context("failed to create input url")?;
-    let output_url =
-        DocUrl::from_absolute_path(temp_out_path).context("failed to create output url")?;
-
     let runner_state = Rc::new(Mutex::new(RunnerState::default()));
 
     // Allow prompting for passwords
@@ -239,7 +227,7 @@ fn office_runner(
     office
         .register_callback({
             let runner_state = runner_state.clone();
-            let input_url = input_url.clone();
+            let input_url = DocUrl::from_path(&temp_in).context("failed to create input url")?;
 
             move |office, ty, payload| {
                 debug!(?ty, "callback invoked");
@@ -289,16 +277,15 @@ fn office_runner(
             OfficeMsg::BusyCheck => continue,
         };
 
+        let temp_in = TempFile {
+            path: temp_in.clone(),
+        };
+        let temp_out = TempFile {
+            path: temp_out.clone(),
+        };
+
         // Convert document
-        let result = convert_document(
-            &office,
-            temp_in_path,
-            temp_out_path,
-            &input_url,
-            &output_url,
-            input,
-            &runner_state,
-        );
+        let result = convert_document(&office, temp_in, temp_out, input, &runner_state);
 
         // Send response
         _ = output.send(result);
@@ -315,48 +302,48 @@ fn office_runner(
 fn convert_document(
     office: &Office,
 
-    temp_in_str: &str,
-    temp_out_str: &str,
+    temp_in: TempFile,
+    temp_out: TempFile,
 
-    temp_in_path: &DocUrl,
-    temp_out_path: &DocUrl,
     input: Bytes,
 
     runner_state: &Rc<Mutex<RunnerState>>,
 ) -> anyhow::Result<Bytes> {
+    let in_url = temp_in.doc_url()?;
+    let out_url = temp_out.doc_url()?;
+
     // Write to temp file
-    std::fs::write(temp_in_str, input).context("failed to write temp input")?;
+    std::fs::write(&temp_in.path, input).context("failed to write temp input")?;
 
     // Load document
-    let mut doc =
-        match office.document_load_with_options(temp_in_path, "InteractionHandler=0,Batch=1") {
-            Ok(value) => value,
-            Err(err) => match err {
-                OfficeError::OfficeError(err) => {
-                    error!(%err, "failed to load document");
+    let mut doc = match office.document_load_with_options(&in_url, "InteractionHandler=0,Batch=1") {
+        Ok(value) => value,
+        Err(err) => match err {
+            OfficeError::OfficeError(err) => {
+                error!(%err, "failed to load document");
 
-                    let _state = &*runner_state.lock();
+                let _state = &*runner_state.lock();
 
-                    // File was encrypted with a password
-                    if err.contains("Unsupported URL") {
-                        return Err(anyhow!("file is encrypted"));
-                    }
-
-                    // File is malformed or corrupted
-                    if err.contains("loadComponentFromURL returned an empty reference") {
-                        return Err(anyhow!("file is corrupted"));
-                    }
-
-                    return Err(OfficeError::OfficeError(err).into());
+                // File was encrypted with a password
+                if err.contains("Unsupported URL") {
+                    return Err(anyhow!("file is encrypted"));
                 }
-                err => return Err(err.into()),
-            },
-        };
+
+                // File is malformed or corrupted
+                if err.contains("loadComponentFromURL returned an empty reference") {
+                    return Err(anyhow!("file is corrupted"));
+                }
+
+                return Err(OfficeError::OfficeError(err).into());
+            }
+            err => return Err(err.into()),
+        },
+    };
 
     debug!("document loaded");
 
     // Convert document
-    let result = doc.save_as(temp_out_path, "pdf", None)?;
+    let result = doc.save_as(&out_url, "pdf", None)?;
 
     // Attempt to free up some memory
     _ = office.trim_memory(1000);
@@ -366,10 +353,7 @@ fn convert_document(
     }
 
     // Read document context
-    let bytes = std::fs::read(temp_out_str).context("failed to read temp out file")?;
-
-    // Delete the document after processing (To prevent conversions sticking around in temp)
-    _ = std::fs::remove_file(temp_out_str);
+    let bytes = std::fs::read(&temp_out.path).context("failed to read temp out file")?;
 
     Ok(Bytes::from(bytes))
 }
@@ -491,4 +475,25 @@ async fn supported_formats(
 async fn collect_garbage(Extension(office): Extension<OfficeHandle>) -> StatusCode {
     _ = office.0.send(OfficeMsg::CollectGarbage).await;
     StatusCode::OK
+}
+
+/// Temporary file that will be removed when it's [Drop] is called
+struct TempFile {
+    /// Path to the temporary file
+    path: PathBuf,
+}
+
+impl TempFile {
+    fn doc_url(&self) -> Result<DocUrl, OfficeError> {
+        DocUrl::from_path(&self.path)
+    }
+}
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        if self.path.exists() {
+            dbg!(&self.path);
+            _ = std::fs::remove_file(&self.path)
+        }
+    }
 }
