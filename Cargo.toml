@@ -1,6 +1,6 @@
 [package]
 name = "office-convert-server"
-version = "0.0.3"
+version = "0.1.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/jacobtread/office-convert-server"
