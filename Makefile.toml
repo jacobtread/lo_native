@@ -1,3 +1,4 @@
+
 # Load from the env file
 env_files = [{ path = ".env" }]
 
@@ -115,3 +116,6 @@ dependencies = ["create-release-dir"]
 condition = { files_not_exist = [".release/binaries"] }
 script_runner = "@shell"
 script = "mkdir -p .release/binaries"
+
+[config]
+default_to_workspace = false
