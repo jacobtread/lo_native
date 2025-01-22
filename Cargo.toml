@@ -15,7 +15,7 @@ members = [".", "./client"]
 # Cheap sharable byte array type
 bytes = "1"
 
-libreofficekit = { version = "0.3" }
+libreofficekit = { version = "0.4" }
 
 # Environment variables
 dotenvy = "0.15"

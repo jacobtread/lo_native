@@ -755,9 +755,9 @@ checksum = "d8adc4bb1803a324070e64a98ae98f38934d91957a99cfb3a43dcbc01bc56439"
 
 [[package]]
 name = "libreofficekit"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7491ae79248ae47c9cbe202e1b961b53cd23147415f66721c2052b901f59fe31"
+checksum = "efc1e074bc9b184311bedc857d41556d0dfdd635bdc79c15c20d431f94cdf278"
 dependencies = [
  "bitflags",
  "dlopen2",
